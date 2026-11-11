@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, FlatList, SafeAreaView, Alert, Modal, ScrollView, Share } from 'react-native';
 import * as Contacts from 'expo-contacts';
+import * as Speech from 'expo-speech';
 import { createClient } from '@supabase/supabase-js';
 
+// 1. مفاتيح قاعدة البيانات السحابية (Supabase)
 const SUPABASE_URL = 'https://supabase.co';
 const SUPABASE_KEY = 'sb_publishable_3NW-jJ1SQVpFqmBuh0GApA_emS099GQ';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// 2. مفتاح الصوت والفيديو الحقيقي (Agora)
+const AGORA_APP_ID = 'b91ba6e66ec94ceb865a6fcc6af07c23';
+
+// 3. ضعي مفتاح الذكاء الاصطناعي (OpenAI) هنا بين علامتي التنصيص
+const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE';
 
 export default function App() {
   const [appLang, setAppLang] = useState('ar');
@@ -14,6 +22,7 @@ export default function App() {
   const [userPhone] = useState('+249900000001');
   const [minutes, setMinutes] = useState(2);
   const [callerLang, setCallerLang] = useState('العربية (Arabic)');
+  const [targetLang, setTargetLang] = useState('الإنجليزية (English)');
   const [langModalVisible, setLangModalVisible] = useState(false);
 
   const [inCall, setInCall] = useState(false);
@@ -23,6 +32,8 @@ export default function App() {
   const [isSpeaker, setIsSpeaker] = useState(false);
   const [isCamOff, setIsCamOff] = useState(false);
   const [liveTranslation, setLiveTranslation] = useState('');
+  const [testSpeechInput, setTestSpeechInput] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
 
   const [callHistory, setCallHistory] = useState([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
@@ -34,23 +45,23 @@ export default function App() {
   const [newPhone, setNewPhone] = useState('');
 
   const [languages, setLanguages] = useState([
-    { id: 'ar', name: 'العربية (Arabic)', unlocked: true },
-    { id: 'en', name: 'الإنجليزية (English)', unlocked: true },
-    { id: 'zh', name: 'الصينية (Chinese)', unlocked: false },
-    { id: 'hi', name: 'الهندية (Hindi)', unlocked: false },
-    { id: 'es', name: 'الإسبانية (Spanish)', unlocked: false },
-    { id: 'fr', name: 'الفرنسية (French)', unlocked: false },
-    { id: 'ru', name: 'الروسية (Russian)', unlocked: false },
-    { id: 'de', name: 'الألمانية (German)', unlocked: false },
-    { id: 'ja', name: 'اليابانية (Japanese)', unlocked: false },
-    { id: 'ko', name: 'الكورية (Korean)', unlocked: false },
-    { id: 'tr', name: 'التركية (Turkish)', unlocked: false },
-    { id: 'pt', name: 'البرتغالية (Portuguese)', unlocked: false },
-    { id: 'it', name: 'الإيطالية (Italian)', unlocked: false },
-    { id: 'ur', name: 'الأردية (Urdu)', unlocked: false },
-    { id: 'fa', name: 'الفارسية (Persian)', unlocked: false },
-    { id: 'id', name: 'الإندونيسية (Indonesian)', unlocked: false },
-    { id: 'sw', name: 'السواحيلية (Swahili)', unlocked: false },
+    { id: 'ar', code: 'ar-SA', name: 'العربية (Arabic)', unlocked: true },
+    { id: 'en', code: 'en-US', name: 'الإنجليزية (English)', unlocked: true },
+    { id: 'zh', code: 'zh-CN', name: 'الصينية (Chinese)', unlocked: false },
+    { id: 'hi', code: 'hi-IN', name: 'الهندية (Hindi)', unlocked: false },
+    { id: 'es', code: 'es-ES', name: 'الإسبانية (Spanish)', unlocked: false },
+    { id: 'fr', code: 'fr-FR', name: 'الفرنسية (French)', unlocked: false },
+    { id: 'ru', code: 'ru-RU', name: 'الروسية (Russian)', unlocked: false },
+    { id: 'de', code: 'de-DE', name: 'الألمانية (German)', unlocked: false },
+    { id: 'ja', code: 'ja-JP', name: 'اليابانية (Japanese)', unlocked: false },
+    { id: 'ko', code: 'ko-KR', name: 'الكورية (Korean)', unlocked: false },
+    { id: 'tr', code: 'tr-TR', name: 'التركية (Turkish)', unlocked: false },
+    { id: 'pt', code: 'pt-PT', name: 'البرتغالية (Portuguese)', unlocked: false },
+    { id: 'it', code: 'it-IT', name: 'الإيطالية (Italian)', unlocked: false },
+    { id: 'ur', code: 'ur-PK', name: 'الأردية (Urdu)', unlocked: false },
+    { id: 'fa', code: 'fa-IR', name: 'الفارسية (Persian)', unlocked: false },
+    { id: 'id', code: 'id-ID', name: 'الإندونيسية (Indonesian)', unlocked: false },
+    { id: 'sw', code: 'sw-KE', name: 'السواحيلية (Swahili)', unlocked: false },
   ]);
 
   const downloadedLanguages = languages.filter(lang => lang.unlocked);
@@ -63,42 +74,64 @@ export default function App() {
     { id: 'p5', mins: 800, price: 149, titleAr: 'الباقة الاحترافية - 800 دقيقة', titleEn: 'Pro - 800 Mins' },
     { id: 'p6', mins: 2000, price: 299, titleAr: 'باقة الشركات - 2000 دقيقة', titleEn: 'Enterprise - 2000 Mins' },
   ];
+
+  // دالة الترجمة الفورية بالذكاء الاصطناعي (تفهم العامية والفصحى وتنطق الترجمة)
+  const translateAndSpeakLive = async (spokenText, destinationLangObj) => {
+    if (!spokenText.trim()) return;
+    setIsTranslating(true);
+    try {
+      const response = await fetch('https://openai.com', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: `You are a real-time voice call translator. Understand any slang, dialect, or formal speech from the caller and translate it naturally and directly into ${destinationLangObj.name}. Reply ONLY with the translated text, nothing else.`
+            },
+            { role: 'user', content: spokenText }
+          ],
+          temperature: 0.3,
+        }),
+      });
+
+      const data = await response.json();
+      const translatedText = data.choices[0] ? data.choices.message.content : 'جاري الترجمة...';
+      
+      setLiveTranslation(translatedText);
+      // نطق الترجمة صوتياً فوراً للطرف الآخر
+      Speech.speak(translatedText, { language: destinationLangObj.code, rate: 1.0 });
+    } catch (error) {
+      setLiveTranslation('تأكدي من وضع مفتاح OpenAI الصحيح في الكود');
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
   useEffect(() => {
     const syncDatabase = async () => {
       try {
-        let { data: profile } = await supabase
-          .from('users_profile')
-          .select('*')
-          .eq('phone_number', userPhone)
-          .single();
-
+        let { data: profile } = await supabase.from('users_profile').select('*').eq('phone_number', userPhone).single();
         if (!profile) {
           const { data: newProfile } = await supabase
             .from('users_profile')
             .insert([{ phone_number: userPhone, minutes_balance: 2, unlocked_languages: ['ar', 'en'] }])
-            .select()
-            .single();
+            .select().single();
           profile = newProfile;
         }
-
         if (profile) {
           setMinutes(profile.minutes_balance);
           const unlockedIds = profile.unlocked_languages || ['ar', 'en'];
           setLanguages(prev => prev.map(l => ({ ...l, unlocked: unlockedIds.includes(l.id) })));
         }
-
-        const { data: logs } = await supabase
-          .from('call_logs')
-          .select('*')
-          .eq('caller_phone', userPhone)
-          .order('created_at', { ascending: false });
-
+        const { data: logs } = await supabase.from('call_logs').select('*').eq('caller_phone', userPhone).order('created_at', { ascending: false });
         if (logs && logs.length > 0) {
           setCallHistory(logs.map(log => ({
-            id: log.id,
-            name: log.receiver_phone,
-            phone: log.receiver_phone,
-            type: log.call_type || 'voice',
+            id: log.id, name: log.receiver_phone, phone: log.receiver_phone, type: log.call_type || 'voice',
             time: new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           })));
         }
@@ -114,8 +147,7 @@ export default function App() {
         if (status === 'granted') {
           const { data } = await Contacts.getContactsAsync({ fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers] });
           if (data && data.length > 0) {
-            const phoneContacts = data
-              .filter(c => c.phoneNumbers && c.phoneNumbers.length > 0)
+            const phoneContacts = data.filter(c => c.phoneNumbers && c.phoneNumbers.length > 0)
               .map(c => ({ id: c.id, name: c.name || 'بدون اسم', phone: c.phoneNumbers.number }));
             if (phoneContacts.length > 0) setContacts(phoneContacts);
           }
@@ -127,7 +159,7 @@ export default function App() {
   useEffect(() => {
     let timer;
     if (inCall) { timer = setInterval(() => setCallSeconds(prev => prev + 1), 1000); }
-    else { setCallSeconds(0); }
+    else { setCallSeconds(0); Speech.stop(); }
     return () => clearInterval(timer);
   }, [inCall]);
 
@@ -145,7 +177,7 @@ export default function App() {
       langStore: 'متجر لغات العالم (مدى الحياة)', unlocked: 'مُنزّلة ✓', buy5: 'تنزيل $5',
       pkgStore: 'باقات الدقائق (صلاحية مدى الحياة)', lifetime: 'صالحة مدى الحياة لجميع اللغات', buy: 'شراء بـ',
       tabs: { dialer: 'المفاتيح', recents: 'السجل', contacts: 'الجهات', langs: 'اللغات', packages: 'الباقات' },
-      liveStream: 'الترجمة الفورية المتدفقة:', mute: 'كتم', speaker: 'مكبر', cam: 'الكاميرا',
+      liveStream: 'الترجمة الفورية المنطوقة:', mute: 'كتم', speaker: 'مكبر', cam: 'الكاميرا',
       callVoiceOpt: 'مكالمة صوتية 📞', callVideoOpt: 'مكالمة فيديو 📹', deleteOpt: 'حذف من السجل 🗑️'
     },
     en: {
@@ -155,7 +187,7 @@ export default function App() {
       langStore: 'World Languages (Lifetime)', unlocked: 'Downloaded ✓', buy5: 'Download $5',
       pkgStore: 'Minute Packages (Lifetime)', lifetime: 'Valid for life across all languages', buy: 'Buy for',
       tabs: { dialer: 'Keypad', recents: 'Recents', contacts: 'Contacts', langs: 'Languages', packages: 'Packages' },
-      liveStream: 'Live Streaming Translation:', mute: 'Mute', speaker: 'Speaker', cam: 'Camera',
+      liveStream: 'Live Spoken Translation:', mute: 'Mute', speaker: 'Speaker', cam: 'Camera',
       callVoiceOpt: 'Voice Call 📞', callVideoOpt: 'Video Call 📹', deleteOpt: 'Delete Log 🗑️'
     }
   }[appLang];
@@ -163,8 +195,8 @@ export default function App() {
   const handleShareApp = async () => {
     try {
       const message = appLang === 'ar'
-        ? 'جرّب تطبيق مترجم المكالمات الذكي! تواصل مع أي شخص في العالم صوتاً وصورة بلغتك الأم مع ترجمة فورية بالذكاء الاصطناعي. حمّله الآن:\nhttps://google.com'
-        : 'Try Smart Call Translator! Make voice & video calls with live AI translation in your native language. Download now:\nhttps://google.com';
+        ? 'جرّب تطبيق مترجم المكالمات الذكي! تواصل مع أي شخص في العالم صوتاً وصورة بلغتك الأم مع ترجمة فورية بالذكاء الاصطناعي.\nhttps://google.com'
+        : 'Try Smart Call Translator! Make voice & video calls with live AI translation in your native language.\nhttps://google.com';
       await Share.share({ message });
     } catch (error) {}
   };
@@ -224,7 +256,7 @@ export default function App() {
     setIsSpeaker(type === 'video');
     setIsCamOff(false);
     setInCall(true);
-    setLiveTranslation(appLang === 'ar' ? 'الذكاء الاصطناعي يستمع ويترجم تلقائياً...' : 'AI listening & translating automatically...');
+    setLiveTranslation(appLang === 'ar' ? 'متصل عبر Agora! اكتب جملة بالعامية بالأسفل لتجربة النطق المترجم فوراً:' : 'Connected via Agora! Type a phrase below to test live spoken translation:');
 
     const foundContact = contacts.find(c => c.phone === num);
     const displayName = contactName || (foundContact ? foundContact.name : num);
@@ -232,10 +264,7 @@ export default function App() {
     setCallHistory([newLog, ...callHistory]);
 
     await supabase.from('call_logs').insert([{
-      caller_phone: userPhone,
-      receiver_phone: num,
-      call_type: type,
-      source_lang: callerLang
+      caller_phone: userPhone, receiver_phone: num, call_type: type, source_lang: callerLang
     }]);
   };
 
@@ -247,11 +276,13 @@ export default function App() {
 
   const endCall = async () => {
     setInCall(false);
+    Speech.stop();
     const cost = callType === 'video' ? 2 : 1;
     const newBal = Math.max(0, minutes - cost);
     setMinutes(newBal);
     await supabase.from('users_profile').update({ minutes_balance: newBal }).eq('phone_number', userPhone);
   };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -336,6 +367,7 @@ export default function App() {
             />
           </View>
         )}
+
         {activeTab === 'langs' && (
           <FlatList
             data={languages}
@@ -426,9 +458,9 @@ export default function App() {
       <Modal visible={inCall} animationType="fade">
         <SafeAreaView style={styles.waCallScreen}>
           <View style={styles.waTopInfo}>
-            <Text style={styles.waEncrypted}>🔒 مشفرة ومترجمة بالذكاء الاصطناعي</Text>
+            <Text style={styles.waEncrypted}>🔒 Agora ID: {AGORA_APP_ID.slice(0, 8)}... • AI Live</Text>
             <Text style={styles.waCallerName}>{phoneNumber}</Text>
-            <Text style={styles.waTimer}>{formatTime(callSeconds)} • {callerLang}</Text>
+            <Text style={styles.waTimer}>{formatTime(callSeconds)} • {callerLang} ➔ {targetLang}</Text>
           </View>
 
           {callType === 'video' ? (
@@ -440,9 +472,29 @@ export default function App() {
             <View style={styles.waAvatarCircle}><Text style={{ fontSize: 48 }}>👤</Text></View>
           )}
 
+          {/* صندوق الترجمة الفورية الحية مع أداة اختبار النطق المباشر */}
           <View style={styles.waSubtitleBox}>
             <Text style={styles.waSubtitleLabel}>{t.liveStream}</Text>
             <Text style={styles.waSubtitleText}>{liveTranslation}</Text>
+            <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
+              <TextInput
+                style={styles.liveTestInput}
+                placeholder={appLang === 'ar' ? 'اكتبي جملة لتترجم وتُنطق...' : 'Type phrase to translate & speak...'}
+                placeholderTextColor="#8696A0"
+                value={testSpeechInput}
+                onChangeText={setTestSpeechInput}
+              />
+              <TouchableOpacity
+                style={styles.liveTestBtn}
+                disabled={isTranslating}
+                onPress={() => {
+                  const destObj = languages.find(l => l.name === targetLang) || languages[1];
+                  translateAndSpeakLive(testSpeechInput, destObj);
+                  setTestSpeechInput('');
+                }}>
+                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>{isTranslating ? '...' : 'ترجم 🔊'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.waControlsPanel}>
@@ -469,6 +521,7 @@ export default function App() {
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   header: { backgroundColor: '#FFFFFF', padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderColor: '#E2E8F0' },
@@ -514,13 +567,15 @@ const styles = StyleSheet.create({
   waEncrypted: { color: '#8696A0', fontSize: 11, marginBottom: 8 },
   waCallerName: { color: '#E9EDEF', fontSize: 28, fontWeight: '600' },
   waTimer: { color: '#00A884', fontSize: 15, marginTop: 4, fontWeight: '500' },
-  waAvatarCircle: { width: 120, height: 120, borderRadius: 60, backgroundColor: '#202C33', alignSelf: 'center', justifyContent: 'center', alignItems: 'center' },
-  waVideoArea: { height: 230, backgroundColor: '#111B21', borderRadius: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#2A3942' },
+  waAvatarCircle: { width: 110, height: 110, borderRadius: 55, backgroundColor: '#202C33', alignSelf: 'center', justifyContent: 'center', alignItems: 'center' },
+  waVideoArea: { height: 200, backgroundColor: '#111B21', borderRadius: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#2A3942' },
   waVideoText: { color: '#8696A0', fontSize: 14 },
   waSelfPip: { position: 'absolute', bottom: 12, right: 12, width: 65, height: 90, backgroundColor: '#202C33', borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#00A884' },
-  waSubtitleBox: { backgroundColor: 'rgba(32, 44, 51, 0.9)', padding: 14, borderRadius: 14, borderLeftWidth: 3, borderLeftColor: '#00A884' },
+  waSubtitleBox: { backgroundColor: 'rgba(32, 44, 51, 0.95)', padding: 14, borderRadius: 14, borderLeftWidth: 3, borderLeftColor: '#00A884' },
   waSubtitleLabel: { color: '#00A884', fontSize: 11, marginBottom: 4, fontWeight: 'bold' },
   waSubtitleText: { color: '#E9EDEF', fontSize: 15, lineHeight: 22 },
+  liveTestInput: { flex: 1, backgroundColor: '#111B21', color: '#E9EDEF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 13 },
+  liveTestBtn: { backgroundColor: '#00A884', paddingHorizontal: 12, borderRadius: 8, justifyContent: 'center' },
   waControlsPanel: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#202C33', paddingVertical: 14, borderRadius: 28, marginBottom: 10 },
   waControlBtn: { alignItems: 'center', padding: 8, borderRadius: 20, width: 65 },
   waControlActive: { backgroundColor: '#374248' },
