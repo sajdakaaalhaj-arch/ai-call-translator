@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "مترجم المكالمات الذكي",
+    "slug": "ai-call-translator",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.sajda.aicalltranslator",
+      "permissions": [
+        "READ_CONTACTS",
+        "WRITE_CONTACTS",
+        "RECORD_AUDIO",
+        "CAMERA"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.sajda.aicalltranslator"
+    }
+  }
+}
