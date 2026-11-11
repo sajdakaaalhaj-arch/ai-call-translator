@@ -13,7 +13,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const AGORA_APP_ID = 'b91ba6e66ec94ceb865a6fcc6af07c23';
 
 // 3. ضعي مفتاح الذكاء الاصطناعي (OpenAI) هنا بين علامتي التنصيص
-const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'YOUR_OPENAI_API_KEY_HERE';
 
 export default function App() {
   const [appLang, setAppLang] = useState('ar');
